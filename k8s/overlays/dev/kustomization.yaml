@@ -1,0 +1,11 @@
+# One replica and no PodDisruptionBudget: a budget that asks for one pod to stay up on a one-pod
+# deployment would stop every node drain, forever.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: rollout-dev
+resources:
+  - namespace.yaml
+  - ../../base
+replicas:
+  - name: rollout-app
+    count: 1

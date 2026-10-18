@@ -1,0 +1,7 @@
+# Not a package: this only configures the linter and formatter for app/ and tests/.
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]

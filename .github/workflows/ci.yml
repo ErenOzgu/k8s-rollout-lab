@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KIND_VERSION: v0.33.0
+  KUBECONFORM_VERSION: v0.6.7
+
+jobs:
+  lint:
+    name: Lint, unit tests and manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+      - name: shellcheck
+        run: shellcheck -x tests/*.sh
+      - name: Unit tests for the service and the load generator
+        run: python -m unittest discover -s tests -p 'test_app.py' -v
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          curl -fsSL -o kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73  kubeconform.tgz" | sha256sum -c -
+          tar -xzf kubeconform.tgz kubeconform
+      - name: Render and validate every overlay against the Kubernetes 1.34 schemas
+        run: |
+          set -euo pipefail
+          for dir in k8s/overlays/dev k8s/overlays/prod tests/control; do
+            echo "== ${dir}"
+            kubectl kustomize "${dir}" | ./kubeconform -strict -summary -kubernetes-version 1.34.0
+          done
+      - name: actionlint
+        run: |
+          set -euo pipefail
+          v=1.7.7
+          base="https://github.com/rhysd/actionlint/releases/download/v${v}"
+          curl -fsSL -o "actionlint.tgz" "${base}/actionlint_${v}_linux_amd64.tar.gz"
+          curl -fsSL -o "checksums.txt" "${base}/actionlint_${v}_checksums.txt"
+          grep " actionlint_${v}_linux_amd64.tar.gz\$" checksums.txt | sed 's/ actionlint_.*/ actionlint.tgz/' | sha256sum -c -
+          tar -xzf actionlint.tgz actionlint
+          ./actionlint
+
+  e2e:
+    name: A real cluster (kind), under load
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kind
+        run: |
+          set -euo pipefail
+          base="https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}"
+          curl -fsSL -o kind-linux-amd64 "${base}/kind-linux-amd64"
+          curl -fsSL -o kind-linux-amd64.sha256sum "${base}/kind-linux-amd64.sha256sum"
+          sha256sum -c kind-linux-amd64.sha256sum
+          sudo install -m 0755 kind-linux-amd64 /usr/local/bin/kind
+          kind version
+      - name: Build the three images and create the cluster
+        run: make cluster
+      - name: Roll out, break, roll back and drain, under load
+        run: tests/e2e.sh
+      - name: Control, the same without the safeguards must drop requests
+        run: tests/control.sh
+      - name: Cluster state on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl get networkpolicy -A || true

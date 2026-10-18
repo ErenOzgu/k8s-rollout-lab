@@ -1,0 +1,21 @@
+# The same service deployed without the safeguards: no readiness probe, and a release that takes three
+# seconds to start listening. tests/control.sh rolls it out under load and EXPECTS failed requests.
+# If it did not see any, the tests that say "no failed requests" would prove nothing.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: rollout-control
+resources:
+  - namespace.yaml
+  - ../../k8s/base
+patches:
+  - target:
+      kind: Deployment
+      name: rollout-app
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/readinessProbe
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: START_DELAY
+          value: "3"

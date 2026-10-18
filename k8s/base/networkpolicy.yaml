@@ -1,0 +1,19 @@
+# Only pods that say they are clients of the app, in the same namespace, may reach it.
+# Everything else is dropped. (Kubelet probes come from the node and are allowed by the plugin.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rollout-app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rollout-app
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              rollout-lab/access: client
+      ports:
+        - protocol: TCP
+          port: 8080

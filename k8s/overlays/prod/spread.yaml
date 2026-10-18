@@ -1,0 +1,15 @@
+# Spread the pods over nodes when there is room, but never refuse to schedule for it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rollout-app
+spec:
+  template:
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: rollout-app
