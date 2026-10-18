@@ -9,11 +9,30 @@
 IMAGE_REPO=${IMAGE_REPO:-rollout-lab}
 export FAILED=0 # read by the scripts that source this file
 
-step() { printf '\n==> %s\n' "$*"; }
-ok() { printf '[PASS] %s\n' "$*"; }
+# In GitHub Actions, every line below also goes to the run's summary page, and numbers become annotations.
+summary() { # summary "markdown line"
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then printf '%s\n' "$*" >> "${GITHUB_STEP_SUMMARY}"; fi
+}
+
+step() {
+  printf '\n==> %s\n' "$*"
+  summary ""
+  summary "**$***"
+}
+ok() {
+  printf '[PASS] %s\n' "$*"
+  summary "- [x] $*"
+}
 bad() {
   printf '[FAIL] %s\n' "$*"
+  summary "- [ ] **FAILED:** $*"
+  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then printf '::error title=%s::%s\n' "$(basename "$0")" "$*"; fi
   FAILED=1
+}
+note() { # note "text": a measurement worth keeping
+  printf '%s\n' "$*"
+  summary "  - $*"
+  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then printf '::notice title=%s::%s\n' "$(basename "$0")" "$*"; fi
 }
 
 # expect "description" command...   passes when the command succeeds

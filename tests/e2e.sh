@@ -30,7 +30,7 @@ mark=$(load_total)
 kc set image deployment/rollout-app app="${IMAGE_REPO}:1.1.0"
 kc rollout status deployment/rollout-app --timeout=120s
 sleep 3
-echo "requests during the rollout: $(requests_since "$mark"), failed: $(failed_since "$mark"), versions: $(versions_since "$mark")"
+note "rolling update: $(requests_since "$mark") requests, $(failed_since "$mark") failed, versions that answered: $(versions_since "$mark")"
 expect "no request failed during the rollout" test "$(failed_since "$mark")" = 0
 expect "the load saw both versions, so it really overlapped the rollout" \
   test "$(versions_since "$mark")" = "1.0.0 1.1.0 "
@@ -49,6 +49,7 @@ expect "the Deployment says why: ProgressDeadlineExceeded" \
   test "$(kc get deployment rollout-app -o jsonpath='{.status.conditions[?(@.type=="Progressing")].reason}')" = ProgressDeadlineExceeded
 expect "the three working pods are still serving" \
   test "$(kc get deployment rollout-app -o jsonpath='{.status.availableReplicas}')" = 3
+note "bad release: $(requests_since "$mark") requests while it was stuck, $(failed_since "$mark") failed"
 expect "no request failed while the bad release was stuck" test "$(failed_since "$mark")" = 0
 expect "the bad release never answered a request" test "$(versions_since "$mark")" = "1.1.0 "
 kc rollout undo deployment/rollout-app
@@ -61,7 +62,7 @@ expect "no request failed during the rollback either" test "$(failed_since "$mar
 step "draining a node respects the PodDisruptionBudget"
 node=$(kc get pods -l app.kubernetes.io/name=rollout-app -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' |
   sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
-echo "draining $node, which runs $(kc get pods -l app.kubernetes.io/name=rollout-app --field-selector "spec.nodeName=$node" -o name | wc -l) of the pods"
+note "draining $node, which runs $(kc get pods -l app.kubernetes.io/name=rollout-app --field-selector "spec.nodeName=$node" -o name | wc -l) of the 3 pods"
 mark=$(load_total)
 kubectl drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=240s
 kc rollout status deployment/rollout-app --timeout=120s
@@ -69,7 +70,7 @@ expect "no app pod is left on the drained node" \
   test "$(kc get pods -l app.kubernetes.io/name=rollout-app --field-selector "spec.nodeName=$node" -o name | wc -l)" = 0
 expect "three replicas are ready on the other nodes" \
   test "$(kc get deployment rollout-app -o jsonpath='{.status.readyReplicas}')" = 3
-echo "requests during the drain: $(requests_since "$mark"), failed: $(failed_since "$mark")"
+note "node drain: $(requests_since "$mark") requests, $(failed_since "$mark") failed"
 expect "no request failed during the drain" test "$(failed_since "$mark")" = 0
 kubectl uncordon "$node"
 
@@ -96,7 +97,7 @@ expect "a labelled pod in another namespace is blocked" \
   test "$(probe rollout-other rollout-lab/access=client)" = blocked
 
 step "the whole run"
-echo "requests: $(load_total), failed: $(failed_since 0)"
+note "whole run: $(load_total) requests, $(failed_since 0) failed"
 expect "not one request failed in the whole run" test "$(failed_since 0)" = 0
 
 trap - ERR

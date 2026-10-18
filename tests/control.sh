@@ -26,7 +26,7 @@ kc set image deployment/rollout-app app="${IMAGE_REPO}:1.1.0"
 kc rollout status deployment/rollout-app --timeout=120s
 sleep 5
 failed=$(failed_since "$mark")
-echo "requests during the rollout: $(requests_since "$mark"), failed: $failed"
+note "rollout without a readiness probe: $(requests_since "$mark") requests, $failed failed"
 expect "without a readiness probe the rollout drops requests (the load generator can see failures)" test "$failed" -gt 0
 
 trap - ERR
