@@ -19,7 +19,7 @@ env:
 jobs:
   lint:
     name: Lint, unit tests and manifests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -58,7 +58,7 @@ jobs:
 
   e2e:
     name: A real cluster (kind), under load
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
