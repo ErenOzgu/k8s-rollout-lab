@@ -85,7 +85,7 @@ probe() { # probe namespace [labels]: prints the HTTP status, or "blocked"
   ip=$(kc get service rollout-app -o jsonpath='{.spec.clusterIP}')
   kubectl -n "$ns" run "$name" --rm -i --restart=Never --quiet \
     --image="${IMAGE_REPO}:1.0.0" --image-pull-policy=IfNotPresent ${labels:+--labels="$labels"} \
-    --overrides="$(restricted_overrides "$name")" \
+    --override-type=strategic --overrides="$(restricted_overrides "$name")" \
     --command -- python -c "
 import urllib.request
 try:
@@ -106,7 +106,7 @@ step "Pod Security: the namespace refuses pods that are not restricted"
 admit() { # admit [extra kubectl run args]: prints "admitted", or the reason it was refused
   local out
   if out=$(kc run admit-check --image="${IMAGE_REPO}:1.0.0" --image-pull-policy=IfNotPresent --restart=Never \
-    --dry-run=server "$@" 2>&1); then echo admitted; else echo "$out"; fi
+    --dry-run=server --override-type=strategic "$@" 2>&1); then echo admitted; else echo "$out"; fi
 }
 expect "the namespace enforces the restricted profile" \
   test "$(kubectl get namespace "$NS" -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}')" = restricted
