@@ -2,3 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: rollout-dev
+  labels:
+    # Pods that break the "restricted" profile (root, no seccomp profile, extra capabilities...) are refused.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest

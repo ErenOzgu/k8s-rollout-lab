@@ -4,6 +4,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versions follow [SemVer
 
 ## Unreleased
 
+### Added
+- The `dev` and `prod` namespaces enforce the Pod Security `restricted` profile. The cluster test checks the label,
+  that a pod built like the app's is admitted, and that a pod with no security context and a privileged pod are refused.
+
+### Changed
+- The probe pods of the NetworkPolicy test now carry a restricted security context, as the namespace requires.
+
 ## 0.1.0 - 2026-10-18
 
 ### Added

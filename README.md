@@ -41,6 +41,7 @@ make down       # delete the cluster
 | **Bad release** | image `1.2.0-bad`, which starts, is alive and never becomes ready | the rollout is reported as failed (`ProgressDeadlineExceeded`); the three old pods keep serving; `kubectl rollout undo` brings `1.1.0` back; no request fails | 927 requests while it was stuck, 0 failed |
 | **Node drain** | `kubectl drain` of the node that runs 2 of the 3 pods | the PodDisruptionBudget lets one pod go at a time; three ready pods end up on the other nodes; no request fails | 244 requests, 0 failed |
 | **NetworkPolicy** | three probe pods | a labelled client in the same namespace gets 200; an unlabelled pod in the same namespace and a labelled pod in another namespace are blocked | 3 of 3 |
+| **Pod Security** | server-side dry runs of pods in the prod namespace, which enforces `restricted` | the label is set; a pod built like the app's is admitted; a pod with no security context and a privileged pod are refused | 4 of 4 |
 | **Whole run** | everything above, one load generator | not one failed request | 1858 requests, 0 failed |
 
 Every step keeps the load running and counts the lines of its log that are not `200`. The same checks, with the
@@ -59,7 +60,7 @@ failed" above could mean that the load generator is blind.
 | `k8s/base/deployment.yaml` | Three replicas, `maxSurge: 1` and `maxUnavailable: 0`, a readiness and a liveness probe, `progressDeadlineSeconds: 45`, a 30 s grace period, a non-root read-only container with no capabilities, no service-account token |
 | `k8s/base/service.yaml` | A ClusterIP Service |
 | `k8s/base/networkpolicy.yaml` | Ingress only from pods labelled `rollout-lab/access: client` in the same namespace |
-| `k8s/overlays/prod` | Namespace, a PodDisruptionBudget (`minAvailable: 2`), topology spread over nodes that never blocks scheduling |
+| `k8s/overlays/prod` | Namespace (enforcing Pod Security `restricted`), a PodDisruptionBudget (`minAvailable: 2`), topology spread over nodes that never blocks scheduling |
 | `k8s/overlays/dev` | One replica, and **no** budget: a budget on a one-pod Deployment would stop every node drain |
 | `app/server.py` | The service: `/readyz` goes 503 on SIGTERM and it keeps answering for five more seconds; `START_DELAY` and `FAIL_READY` make slow and broken releases |
 | `app/loadgen.py` | One line per request: time, status or `ERR`, and the version that answered |

@@ -4,7 +4,7 @@ Small steps, in order. A step is done when CI is green (including the cluster te
 the CHANGELOG has a line for it. A step that adds a safeguard also gets a check in `tests/` that fails when the
 safeguard is removed. Each step is meant to be a few hours of work.
 
-- [ ] Label the namespaces `pod-security.kubernetes.io/enforce: restricted`, and test that the pods are admitted
+- [x] Label the namespaces `pod-security.kubernetes.io/enforce: restricted`, and test that the pods are admitted
       (they already comply) and that a pod without a security context is refused
 - [ ] An in-flight request test: `/slow?ms=` on the service, and a request that is still running when its pod gets
       SIGTERM must finish with 200

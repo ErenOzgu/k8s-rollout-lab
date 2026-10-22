@@ -102,8 +102,8 @@ roadmap. None of this has run in a production cluster.
 
 ## What would be changed next
 
-See [ROADMAP.md](../ROADMAP.md): the Pod Security `restricted` label comes first, because the pods already comply and
-it is a cheap way to keep them compliant.
+See [ROADMAP.md](../ROADMAP.md). The Pod Security `restricted` label is done: the pods already complied, and the
+namespaces now keep them that way.
 
 ## Questions this design usually draws
 

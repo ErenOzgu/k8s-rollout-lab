@@ -75,12 +75,17 @@ expect "no request failed during the drain" test "$(failed_since "$mark")" = 0
 kubectl uncordon "$node"
 
 step "the NetworkPolicy lets clients in and keeps everyone else out"
+# The namespaces enforce the "restricted" Pod Security profile, so even a probe pod has to comply with it.
+restricted_overrides() { # restricted_overrides container-name
+  printf '{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":10001,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"%s","securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}' "$1"
+}
 probe() { # probe namespace [labels]: prints the HTTP status, or "blocked"
   local ns=$1 labels=${2:-}
-  local ip
+  local ip name=probe-$RANDOM
   ip=$(kc get service rollout-app -o jsonpath='{.spec.clusterIP}')
-  kubectl -n "$ns" run "probe-$RANDOM" --rm -i --restart=Never --quiet \
+  kubectl -n "$ns" run "$name" --rm -i --restart=Never --quiet \
     --image="${IMAGE_REPO}:1.0.0" --image-pull-policy=IfNotPresent ${labels:+--labels="$labels"} \
+    --overrides="$(restricted_overrides "$name")" \
     --command -- python -c "
 import urllib.request
 try:
@@ -95,6 +100,22 @@ expect "a labelled client in the same namespace gets through" \
 expect "an unlabelled pod in the same namespace is blocked" test "$(probe "$NS")" = blocked
 expect "a labelled pod in another namespace is blocked" \
   test "$(probe rollout-other rollout-lab/access=client)" = blocked
+
+step "Pod Security: the namespace refuses pods that are not restricted"
+# --dry-run=server runs the real admission chain, including Pod Security, without creating anything.
+admit() { # admit [extra kubectl run args]: prints "admitted", or the reason it was refused
+  local out
+  if out=$(kc run admit-check --image="${IMAGE_REPO}:1.0.0" --image-pull-policy=IfNotPresent --restart=Never \
+    --dry-run=server "$@" 2>&1); then echo admitted; else echo "$out"; fi
+}
+expect "the namespace enforces the restricted profile" \
+  test "$(kubectl get namespace "$NS" -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}')" = restricted
+expect "a pod built like the app's own pods is admitted" \
+  test "$(admit --overrides="$(restricted_overrides admit-check)")" = admitted
+is_refused() { [[ "$1" == *'violates PodSecurity "restricted'* ]]; }
+expect "a pod with no security context is refused" is_refused "$(admit)"
+expect "a privileged pod is refused" \
+  is_refused "$(admit --overrides="$(restricted_overrides admit-check | sed 's/"allowPrivilegeEscalation":false/"privileged":true/')")"
 
 step "the whole run"
 note "whole run: $(load_total) requests, $(failed_since 0) failed"
