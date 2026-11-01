@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
 
 # The version this image reports. The tests build the same code several times with different values,
 # which is how they make "a new release" and "a release that never becomes ready".
