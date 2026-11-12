@@ -39,6 +39,10 @@ right answer when the application cannot be changed. I chose to put it in the ap
 it can be unit-tested without a cluster. `terminationGracePeriodSeconds` (30) is longer than the drain, or the kubelet
 would kill the pod in the middle of it.
 
+When the drain is over the service stops accepting connections but waits for the requests that are still running, up to
+`FINISH_SECONDS` (20), so the pod needs at most 25 s of the 30 s grace period. Without that wait the process exited with
+its handler threads killed and a request that outlasted the drain was reset; `/slow?ms=` exists to test exactly that.
+
 ### A release that never becomes ready is stopped, not rolled back for you
 
 `progressDeadlineSeconds: 45` makes Kubernetes report a stuck rollout as failed (`ProgressDeadlineExceeded`) instead of

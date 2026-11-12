@@ -6,7 +6,7 @@ safeguard is removed. Each step is meant to be a few hours of work.
 
 - [x] Label the namespaces `pod-security.kubernetes.io/enforce: restricted`, and test that the pods are admitted
       (they already comply) and that a pod without a security context is refused
-- [ ] An in-flight request test: `/slow?ms=` on the service, and a request that is still running when its pod gets
+- [x] An in-flight request test: `/slow?ms=` on the service, and a request that is still running when its pod gets
       SIGTERM must finish with 200
 - [ ] `startupProbe` and a slow-starting variant, with a test that a slow start is not killed by the liveness probe
 - [ ] A control for the drain: the same drain with no PodDisruptionBudget, showing how many requests it costs (or that

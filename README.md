@@ -42,6 +42,7 @@ make down       # delete the cluster
 | **Node drain** | `kubectl drain` of the node that runs 2 of the 3 pods | the PodDisruptionBudget lets one pod go at a time; three ready pods end up on the other nodes; no request fails | 244 requests, 0 failed |
 | **NetworkPolicy** | three probe pods | a labelled client in the same namespace gets 200; an unlabelled pod in the same namespace and a labelled pod in another namespace are blocked | 3 of 3 |
 | **Pod Security** | server-side dry runs of pods in the prod namespace, which enforces `restricted` | the label is set; a pod built like the app's is admitted; a pod with no security context and a privileged pod are refused | 4 of 4 |
+| **In-flight request** | a 9 s request (`/slow?ms=9000`) is sent straight to one pod, which is deleted while it runs | the request outlasts the 5 s drain and is still answered with 200 | checked in CI |
 | **Whole run** | everything above, one load generator | not one failed request | 1858 requests, 0 failed |
 
 Every step keeps the load running and counts the lines of its log that are not `200`. The same checks, with the
@@ -62,7 +63,7 @@ failed" above could mean that the load generator is blind.
 | `k8s/base/networkpolicy.yaml` | Ingress only from pods labelled `rollout-lab/access: client` in the same namespace |
 | `k8s/overlays/prod` | Namespace (enforcing Pod Security `restricted`), a PodDisruptionBudget (`minAvailable: 2`), topology spread over nodes that never blocks scheduling |
 | `k8s/overlays/dev` | One replica, and **no** budget: a budget on a one-pod Deployment would stop every node drain |
-| `app/server.py` | The service: `/readyz` goes 503 on SIGTERM and it keeps answering for five more seconds; `START_DELAY` and `FAIL_READY` make slow and broken releases |
+| `app/server.py` | The service: `/readyz` goes 503 on SIGTERM and it keeps answering for five more seconds and then waits for requests still running (up to `FINISH_SECONDS`); `/slow?ms=` makes a slow request; `START_DELAY` and `FAIL_READY` make slow and broken releases |
 | `app/loadgen.py` | One line per request: time, status or `ERR`, and the version that answered |
 
 The three images are the same code built with different arguments: `1.0.0` and `1.1.0` (two good releases) and `1.2.0-bad`
@@ -72,7 +73,7 @@ The three images are the same code built with different arguments: `1.0.0` and `
 
 | Job | What it proves |
 |---|---|
-| **Lint, unit tests and manifests** | `ruff`, `shellcheck`, `actionlint`; the unit tests of the service (readiness, slow start, never ready, drain timing on SIGTERM) and of the load generator; every overlay rendered with kustomize and validated by kubeconform against the Kubernetes 1.34 schemas |
+| **Lint, unit tests and manifests** | `ruff`, `shellcheck`, `actionlint`; the unit tests of the service (readiness, slow start, never ready, drain timing on SIGTERM, a request that outlasts the drain) and of the load generator; every overlay rendered with kustomize and validated by kubeconform against the Kubernetes 1.34 schemas |
 | **A real cluster (kind), under load** | `tests/e2e.sh`, then `tests/control.sh`, on kind v0.33.0 with a pinned node image |
 
 ## Limits

@@ -5,8 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versions follow [SemVer
 ## Unreleased
 
 ### Added
+- `/slow?ms=` on the service (0 to 60000 ms), a request that takes as long as it is told to. A cluster test sends a
+  9 s request straight to a pod, deletes the pod while it runs, and requires a 200.
 - The `dev` and `prod` namespaces enforce the Pod Security `restricted` profile. The cluster test checks the label,
   that a pod built like the app's is admitted, and that a pod with no security context and a privileged pod are refused.
+
+### Fixed
+- A request still running when the drain ended was cut off, because the process exited with its handler threads
+  killed. The service now waits for running requests, up to `FINISH_SECONDS` (default 20, less than the 30 s grace
+  period minus the 5 s drain). A unit test fails if the wait is removed.
 
 ### Changed
 - The probe pods of the NetworkPolicy test now carry a restricted security context, as the namespace requires.

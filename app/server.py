@@ -5,6 +5,8 @@ It does three things a deployment depends on:
 * /readyz says whether to send traffic. It turns 503 as soon as SIGTERM arrives.
 * After SIGTERM it keeps serving for DRAIN_SECONDS, because the endpoint list takes a moment to
   reach every node; requests still on their way must not meet a closed port.
+* A request that is still running when the drain is over is finished before the process exits (up to
+  FINISH_SECONDS), so that a slow request is not cut off by a rollout. /slow?ms= makes one on demand.
 * START_DELAY and FAIL_READY make slow and broken releases on demand, for the tests.
 
 Standard library only.
@@ -20,6 +22,9 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
+
+MAX_SLOW_MS = 60_000
 
 
 class State:
@@ -30,6 +35,21 @@ class State:
         self.fail_ready = fail_ready
         self.pod = pod
         self.draining = threading.Event()
+        self._lock = threading.Lock()
+        self._inflight = 0
+
+    def request_started(self) -> None:
+        with self._lock:
+            self._inflight += 1
+
+    def request_finished(self) -> None:
+        with self._lock:
+            self._inflight -= 1
+
+    @property
+    def inflight(self) -> int:
+        with self._lock:
+            return self._inflight
 
     @property
     def ready(self) -> bool:
@@ -46,7 +66,28 @@ def make_handler(state: State) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(body)
 
         def do_GET(self) -> None:
-            if self.path == "/healthz":
+            state.request_started()
+            try:
+                self._route()
+            finally:
+                state.request_finished()
+
+        def _slow(self, query: str) -> None:
+            try:
+                ms = int(parse_qs(query).get("ms", [""])[0])
+            except ValueError:
+                ms = -1
+            if not 0 <= ms <= MAX_SLOW_MS:
+                self._send(400, f"ms must be a whole number from 0 to {MAX_SLOW_MS}\n".encode())
+                return
+            time.sleep(ms / 1000)
+            self._send(200, b"slow ok\n")
+
+        def _route(self) -> None:
+            url = urlsplit(self.path)
+            if url.path == "/slow":
+                self._slow(url.query)
+            elif self.path == "/healthz":
                 self._send(200, b"ok\n")
             elif self.path == "/readyz":
                 if state.ready:
@@ -74,6 +115,7 @@ def serve(
     version: str,
     start_delay: float,
     drain_seconds: float,
+    finish_seconds: float,
     fail_ready: bool,
     pod: str,
     *,
@@ -85,12 +127,19 @@ def serve(
         time.sleep(start_delay)
     server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(state))
     server.daemon_threads = True
+    done = threading.Event()
 
     def drain() -> None:
         state.draining.set()
         log(f"SIGTERM: not ready any more, still serving for {drain_seconds:g}s")
         time.sleep(drain_seconds)
-        server.shutdown()
+        server.shutdown()  # stops accepting; handlers that are already running carry on
+        deadline = time.monotonic() + finish_seconds
+        if state.inflight:
+            log(f"drain over: waiting up to {finish_seconds:g}s for {state.inflight} running request(s)")
+        while state.inflight and time.monotonic() < deadline:
+            time.sleep(0.05)
+        done.set()
 
     if install_signals:
         # shutdown() waits for serve_forever(), which runs on this thread: call it from another.
@@ -99,6 +148,8 @@ def serve(
     try:
         server.serve_forever(poll_interval=0.1)
     finally:
+        if state.draining.is_set():
+            done.wait()  # serve_forever() has returned, but requests may still be running
         server.server_close()
     log("stopped")
     return 0
@@ -110,6 +161,7 @@ def main() -> int:
         version=os.environ.get("VERSION", "dev"),
         start_delay=float(os.environ.get("START_DELAY", "0")),
         drain_seconds=float(os.environ.get("DRAIN_SECONDS", "5")),
+        finish_seconds=float(os.environ.get("FINISH_SECONDS", "20")),
         fail_ready=os.environ.get("FAIL_READY", "") == "1",
         pod=os.environ.get("HOSTNAME") or socket.gethostname(),
     )

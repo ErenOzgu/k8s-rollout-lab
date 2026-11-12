@@ -117,6 +117,30 @@ expect "a pod with no security context is refused" is_refused "$(admit)"
 expect "a privileged pod is refused" \
   is_refused "$(admit --overrides="$(restricted_overrides admit-check | sed 's/"allowPrivilegeEscalation":false/"privileged":true/')")"
 
+step "a request that is still running when its pod gets SIGTERM finishes with 200"
+# 9 s is longer than the 5 s drain, so a service that exits when the drain is over would cut the request off.
+phase_is() { test "$(kc get pod "$1" -o jsonpath='{.status.phase}')" = "$2"; }
+victim=$(kc get pods -l app.kubernetes.io/name=rollout-app --field-selector status.phase=Running -o jsonpath='{.items[0].metadata.name}')
+victim_ip=$(kc get pod "$victim" -o jsonpath='{.status.podIP}')
+kc run slow-client --restart=Never --quiet --image="${IMAGE_REPO}:1.0.0" --image-pull-policy=IfNotPresent \
+  --labels=rollout-lab/access=client --override-type=strategic --overrides="$(restricted_overrides slow-client)" \
+  --command -- python -c "
+import urllib.request
+try:
+    print(urllib.request.urlopen('http://$victim_ip:8080/slow?ms=9000', timeout=30).status)
+except Exception as e:
+    print('failed', type(e).__name__)
+"
+wait_until 30 phase_is slow-client Running
+sleep 2 # the request is on its way to the pod and is being held there
+kc delete pod "$victim" --wait=false
+wait_until 60 phase_is slow-client Succeeded
+expect "the slow request that was running when its pod got SIGTERM was answered with 200" \
+  test "$(kc logs slow-client)" = 200
+kc delete pod slow-client --ignore-not-found --wait=false
+kc rollout status deployment/rollout-app --timeout=120s
+expect "three replicas are ready again" test "$(kc get deployment rollout-app -o jsonpath='{.status.readyReplicas}')" = 3
+
 step "the whole run"
 note "whole run: $(load_total) requests, $(failed_since 0) failed"
 expect "not one request failed in the whole run" test "$(failed_since 0)" = 0

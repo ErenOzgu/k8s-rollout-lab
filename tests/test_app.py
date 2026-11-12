@@ -6,12 +6,15 @@ the service keeps answering while it drains, and a slow or broken release looks 
 
 from __future__ import annotations
 
+import contextlib
+import http.client
 import json
 import os
 import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import unittest
 import urllib.error
@@ -130,6 +133,50 @@ class TestService(unittest.TestCase):
             out = svc.stop()
             self.assertIn("SIGTERM", out)
             self.assertIn("stopped", out)
+
+    def test_slow_answers_after_the_delay(self) -> None:
+        with Service() as svc:
+            svc.wait_listening()
+            start = time.monotonic()
+            self.assertEqual(get(svc.port, "/slow?ms=400")[0], 200)
+            self.assertGreaterEqual(time.monotonic() - start, 0.4)
+
+    def test_slow_refuses_a_missing_or_silly_delay(self) -> None:
+        with Service() as svc:
+            svc.wait_listening()
+            for path in ("/slow", "/slow?ms=abc", "/slow?ms=-1", "/slow?ms=3600000"):
+                self.assertEqual(get(svc.port, path)[0], 400, path)
+
+    def test_a_request_still_running_when_sigterm_arrives_is_finished(self) -> None:
+        # The request outlasts the drain (0.5 s). Without waiting for it, the process exits at 0.5 s and the
+        # client gets a reset instead of a 200.
+        with Service(DRAIN_SECONDS="0.5", FINISH_SECONDS="5") as svc:
+            svc.wait_listening()
+            result: list[tuple[int, str]] = []
+            client = threading.Thread(target=lambda: result.append(get(svc.port, "/slow?ms=1800")))
+            client.start()
+            time.sleep(0.3)  # the request is running now
+            svc.proc.send_signal(signal.SIGTERM)
+            client.join(timeout=10)
+            self.assertEqual(result, [(200, "slow ok\n")])
+            self.assertEqual(svc.proc.wait(timeout=5), 0)
+            self.assertIn("waiting up to 5s for 1 running request", svc.stop())
+
+    def test_a_request_that_outlasts_finish_seconds_does_not_hold_the_pod_for_ever(self) -> None:
+        with Service(DRAIN_SECONDS="0.2", FINISH_SECONDS="0.6") as svc:
+            svc.wait_listening()
+
+            def abandoned() -> None:
+                with contextlib.suppress(OSError, http.client.HTTPException):
+                    get(svc.port, "/slow?ms=8000")
+
+            client = threading.Thread(target=abandoned, daemon=True)
+            client.start()
+            time.sleep(0.3)
+            sent = time.monotonic()
+            svc.proc.send_signal(signal.SIGTERM)
+            self.assertEqual(svc.proc.wait(timeout=5), 0)
+            self.assertLess(time.monotonic() - sent, 3)
 
 
 class TestLoadgen(unittest.TestCase):
