@@ -4,6 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/), versions follow [SemVer
 
 ## Unreleased
 
+## 0.2.0 - 2026-11-12
+
 ### Added
 - `/slow?ms=` on the service (0 to 60000 ms), a request that takes as long as it is told to. A cluster test sends a
   9 s request straight to a pod, deletes the pod while it runs, and requires a 200.
